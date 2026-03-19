@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>FoodSense AI — Smart Food Waste Prediction</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- ════════════════ SIDEBAR ════════════════ -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-icon">🍽️</div>
+    <div class="logo-text">
+      <div class="logo-name">FoodSense <span class="logo-ai">AI</span></div>
+      <div class="logo-sub">Waste Prediction System</div>
+    </div>
+  </div>
+
+  <nav class="sidebar-nav">
+    <a class="nav-link active" data-tab="predict">
+      <span class="nav-icon">🎯</span>
+      <span class="nav-label">Predict Now</span>
+    </a>
+    <a class="nav-link" data-tab="dashboard">
+      <span class="nav-icon">📊</span>
+      <span class="nav-label">Dashboard</span>
+    </a>
+    <a class="nav-link" data-tab="weekly">
+      <span class="nav-icon">📅</span>
+      <span class="nav-label">Weekly Planner</span>
+    </a>
+    <a class="nav-link" data-tab="insights">
+      <span class="nav-icon">💡</span>
+      <span class="nav-label">EDA Insights</span>
+    </a>
+  </nav>
+
+  <div class="sidebar-status">
+    <div class="status-dot"></div>
+    <div class="status-info">
+      <div class="status-model">{{ model_name }}</div>
+      <div class="status-metrics">R² = {{ r2 }} &nbsp;·&nbsp; MAE = {{ mae }}</div>
+    </div>
+  </div>
+</aside>
+
+<!-- ════════════════ MAIN ════════════════ -->
+<main class="main" id="main">
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <button class="burger" onclick="toggleSidebar()">☰</button>
+    <h1 class="topbar-title">Smart Food Waste Prediction System</h1>
+    <div class="topbar-right">
+      <div class="live-pill"><span class="live-dot"></span>Live Model</div>
+      <div class="clock" id="clock"></div>
+    </div>
+  </header>
+
+  <!-- ─────────── TAB: PREDICT ─────────── -->
+  <section class="tab active" id="tab-predict">
+    <div class="page-head">
+      <h2>🎯 Meal Demand Prediction</h2>
+      <p>Enter parameters to get an AI-powered forecast with confidence bands and impact analysis.</p>
+    </div>
+
+    <div class="predict-layout">
+
+      <!-- LEFT: Input Form -->
+      <div class="card form-card">
+        <div class="card-title">📋 Input Parameters</div>
+
+        <!-- Day Selector -->
+        <div class="field">
+          <label class="field-label">Day of Week</label>
+          <div class="day-grid">
+            {% for d in days %}
+            <button class="day-btn {% if loop.first %}active{% endif %}" data-day="{{ d }}">
+              {{ d[:3] }}
+            </button>
+            {% endfor %}
+          </div>
+          <input type="hidden" id="inp-day" value="{{ days[0] }}">
+        </div>
+
+        <!-- Weather Selector -->
+        <div class="field">
+          <label class="field-label">Weather Condition</label>
+          <div class="wx-grid">
+            <button class="wx-btn active" data-wx="Sunny">☀️<span>Sunny</span></button>
+            <button class="wx-btn" data-wx="Cloudy">☁️<span>Cloudy</span></button>
+            <button class="wx-btn" data-wx="Rainy">🌧️<span>Rainy</span></button>
+            <button class="wx-btn" data-wx="Stormy">⛈️<span>Stormy</span></button>
+          </div>
+          <input type="hidden" id="inp-weather" value="Sunny">
+        </div>
+
+        <!-- Festival Toggle -->
+        <div class="field">
+          <label class="field-label">Special Event / Festival</label>
+          <div class="toggle-row">
+            <label class="toggle">
+              <input type="checkbox" id="inp-festival">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+            <span class="toggle-lbl" id="festival-lbl">Normal Day</span>
+          </div>
+        </div>
+
+        <!-- Sliders -->
+        <div class="sliders-grid">
+          <div class="field">
+            <label class="field-label">Expected Customers <b class="val-badge" id="v-exp">500</b></label>
+            <input type="range" id="inp-exp" class="slider" min="100" max="1000" value="500"
+                   oninput="syncVal('v-exp',this.value)">
+            <div class="slider-ends"><span>100</span><span>1000</span></div>
+          </div>
+          <div class="field">
+            <label class="field-label">Previous Day Consumption <b class="val-badge" id="v-prev">400</b></label>
+            <input type="range" id="inp-prev" class="slider" min="50" max="900" value="400"
+                   oninput="syncVal('v-prev',this.value)">
+            <div class="slider-ends"><span>50</span><span>900</span></div>
+          </div>
+          <div class="field">
+            <label class="field-label">Previous Week Same Day <b class="val-badge" id="v-week">420</b></label>
+            <input type="range" id="inp-week" class="slider" min="50" max="900" value="420"
+                   oninput="syncVal('v-week',this.value)">
+            <div class="slider-ends"><span>50</span><span>900</span></div>
+          </div>
+        </div>
+
+        <button class="predict-btn" id="predict-btn" onclick="runPredict()">
+          ⚡ Generate Prediction
+        </button>
+      </div>
+
+      <!-- RIGHT: Results -->
+      <div class="results-col">
+
+        <!-- Big Result Card -->
+        <div class="card result-card" id="result-card" style="display:none">
+          <div class="card-title">📈 Prediction Result</div>
+
+          <div class="result-hero">
+            <div class="result-ring">
+              <div class="ring-num" id="r-pred">—</div>
+              <div class="ring-lbl">Meals Predicted</div>
+            </div>
+            <div class="result-meta">
+              <div class="meta-row">
+                <span class="meta-icon">🎯</span>
+                <div>
+                  <div class="meta-k">Recommended to Prepare</div>
+                  <div class="meta-v" id="r-rec">—</div>
+                </div>
+              </div>
+              <div class="meta-row">
+                <span class="meta-icon">📊</span>
+                <div>
+                  <div class="meta-k">Confidence Range</div>
+                  <div class="meta-v" id="r-range">—</div>
+                </div>
+              </div>
+              <div class="meta-row">
+                <span class="meta-icon">⚡</span>
+                <div>
+                  <div class="meta-k">Model Confidence</div>
+                  <div class="meta-v" id="r-conf">—</div>
+                </div>
+              </div>
+              <div class="meta-row">
+                <span class="meta-icon">🛡️</span>
+                <div>
+                  <div class="meta-k">Safety Buffer Applied</div>
+                  <div class="meta-v" id="r-buf">—</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Confidence Bar -->
+          <div class="conf-section">
+            <div class="conf-labels">
+              <span>Lower: <b id="r-lo">—</b></span>
+              <span>Predicted: <b id="r-mid">—</b></span>
+              <span>Upper: <b id="r-hi">—</b></span>
+            </div>
+            <div class="conf-track">
+              <div class="conf-fill" id="conf-fill"></div>
+              <div class="conf-pin"  id="conf-pin"></div>
+            </div>
+          </div>
+
+          <!-- Mini Chart -->
+          <div class="mini-chart-wrap">
+            <canvas id="mini-chart" height="120"></canvas>
+          </div>
+        </div>
+
+        <!-- Impact Cards -->
+        <div id="impact-section" style="display:none">
+          <div class="impact-row">
+            <div class="impact-card green">
+              <div class="impact-icon">💰</div>
+              <div class="impact-num" id="i-cost">$0</div>
+              <div class="impact-lbl">Potential Cost Saved</div>
+            </div>
+            <div class="impact-card teal">
+              <div class="impact-icon">🌱</div>
+              <div class="impact-num" id="i-co2">0 kg</div>
+              <div class="impact-lbl">CO₂ Emissions Saved</div>
+            </div>
+          </div>
+
+          <!-- Top Drivers -->
+          <div class="card">
+            <div class="card-title">🔍 Top Prediction Drivers</div>
+            <div id="drivers"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── TAB: DASHBOARD ─────────── -->
+  <section class="tab" id="tab-dashboard">
+    <div class="page-head">
+      <h2>📊 Model Performance Dashboard</h2>
+      <p>Live metrics, model comparison, and evaluation results.</p>
+    </div>
+
+    <!-- Metric Cards -->
+    <div class="metrics-grid">
+      <div class="metric-card c-green">
+        <div class="metric-icon">📐</div>
+        <div class="metric-num">{{ mae }}</div>
+        <div class="metric-lbl">Mean Absolute Error</div>
+        <div class="metric-hint">Lower is better</div>
+      </div>
+      <div class="metric-card c-teal">
+        <div class="metric-icon">📏</div>
+        <div class="metric-num">{{ rmse }}</div>
+        <div class="metric-lbl">Root Mean Sq Error</div>
+        <div class="metric-hint">Lower is better</div>
+      </div>
+      <div class="metric-card c-purple">
+        <div class="metric-icon">🎯</div>
+        <div class="metric-num">{{ r2 }}</div>
+        <div class="metric-lbl">R² Score</div>
+        <div class="metric-hint">Closer to 1.0 is better</div>
+      </div>
+      <div class="metric-card c-amber">
+        <div class="metric-icon">🏆</div>
+        <div class="metric-num" style="font-size:1.1rem">{{ model_name }}</div>
+        <div class="metric-lbl">Best Model Selected</div>
+        <div class="metric-hint">Auto-selected by MAE</div>
+      </div>
+    </div>
+
+    <!-- Charts row -->
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">🏅 Model Comparison</div>
+        <canvas id="model-comp-chart" height="230"></canvas>
+      </div>
+      <div class="card">
+        <div class="card-title">🔮 Feature Importance</div>
+        <canvas id="feat-imp-chart" height="230"></canvas>
+      </div>
+    </div>
+
+    <!-- Plot images -->
+    <div class="two-col">
+      <div class="card img-card">
+        <div class="card-title">🎯 Actual vs Predicted</div>
+        <img src="/static/plots/actual_vs_predicted.png" alt="Actual vs Predicted">
+      </div>
+      <div class="card img-card">
+        <div class="card-title">📉 Residual Analysis</div>
+        <img src="/static/plots/residuals.png" alt="Residuals">
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── TAB: WEEKLY PLANNER ─────────── -->
+  <section class="tab" id="tab-weekly">
+    <div class="page-head">
+      <h2>📅 7-Day Meal Prep Planner</h2>
+      <p>Plan your entire week with AI-powered day-by-day forecasts.</p>
+    </div>
+
+    <div class="card" style="max-width:750px;margin-bottom:1.5rem">
+      <div class="card-title">⚙️ Week Setup</div>
+      <div class="sliders-grid">
+        <div class="field">
+          <label class="field-label">Average Expected Customers <b class="val-badge" id="wk-exp-v">400</b></label>
+          <input type="range" id="wk-exp" class="slider" min="100" max="900" value="400"
+                 oninput="syncVal('wk-exp-v',this.value)">
+        </div>
+        <div class="field">
+          <label class="field-label">Today's Consumption (Baseline) <b class="val-badge" id="wk-pre-v">350</b></label>
+          <input type="range" id="wk-pre" class="slider" min="50" max="800" value="350"
+                 oninput="syncVal('wk-pre-v',this.value)">
+        </div>
+      </div>
+      <div class="field" style="margin-top:.5rem">
+        <label class="field-label">Weather Per Day</label>
+        <div class="week-wx-row" id="week-wx-row"></div>
+      </div>
+      <button class="predict-btn" style="width:auto;padding:.75rem 2rem;margin-top:1rem"
+              onclick="genWeekly()">📅 Generate Weekly Plan</button>
+    </div>
+
+    <div id="weekly-result" style="display:none">
+      <div class="sum-cards" id="weekly-summary"></div>
+      <div class="card" style="margin-bottom:1.2rem">
+        <div class="card-title">📊 Weekly Demand Forecast</div>
+        <canvas id="weekly-chart" height="200"></canvas>
+      </div>
+      <div class="card">
+        <div class="card-title">📋 Daily Breakdown</div>
+        <div class="tbl-wrap">
+          <table class="week-tbl" id="week-tbl"></table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── TAB: EDA INSIGHTS ─────────── -->
+  <section class="tab" id="tab-insights">
+    <div class="page-head">
+      <h2>💡 Exploratory Data Analysis</h2>
+      <p>Visual patterns discovered from 1,000 rows of historical food consumption data.</p>
+    </div>
+    <div class="two-col">
+      <div class="card img-card">
+        <div class="card-title">📊 Demand Distribution & Customer Correlation</div>
+        <img src="/static/plots/eda_distribution.png" alt="Distribution">
+      </div>
+      <div class="card img-card">
+        <div class="card-title">📅 Demand by Day of Week</div>
+        <img src="/static/plots/eda_day_impact.png" alt="Day Impact">
+      </div>
+      <div class="card img-card">
+        <div class="card-title">🌤️ Weather & Festival Impact</div>
+        <img src="/static/plots/eda_weather_festival.png" alt="Weather Festival">
+      </div>
+      <div class="card img-card">
+        <div class="card-title">🔗 Feature Correlation Heatmap</div>
+        <img src="/static/plots/eda_heatmap.png" alt="Heatmap">
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+// ─── Clock ───
+function tick(){ document.getElementById("clock").textContent = new Date().toLocaleTimeString(); }
+setInterval(tick, 1000); tick();
+
+// ─── Sidebar ───
+function toggleSidebar(){
+  document.getElementById("sidebar").classList.toggle("collapsed");
+  document.getElementById("main").classList.toggle("expanded");
+}
+
+// ─── Tab switching ───
+document.querySelectorAll(".nav-link").forEach(link => {
+  link.addEventListener("click", function(e){
+    e.preventDefault();
+    document.querySelectorAll(".nav-link").forEach(l => l.classList.remove("active"));
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    this.classList.add("active");
+    document.getElementById("tab-" + this.dataset.tab).classList.add("active");
+    if(this.dataset.tab === "dashboard") loadDashboard();
+  });
+});
+
+// ─── Sync slider values ───
+function syncVal(id, val){ document.getElementById(id).textContent = val; }
+
+// ─── Day buttons ───
+document.querySelectorAll(".day-btn").forEach(btn => {
+  btn.addEventListener("click", function(){
+    document.querySelectorAll(".day-btn").forEach(b => b.classList.remove("active"));
+    this.classList.add("active");
+    document.getElementById("inp-day").value = this.dataset.day;
+  });
+});
+
+// ─── Weather buttons ───
+document.querySelectorAll(".wx-btn").forEach(btn => {
+  btn.addEventListener("click", function(){
+    document.querySelectorAll(".wx-btn").forEach(b => b.classList.remove("active"));
+    this.classList.add("active");
+    document.getElementById("inp-weather").value = this.dataset.wx;
+  });
+});
+
+// ─── Festival toggle ───
+document.getElementById("inp-festival").addEventListener("change", function(){
+  document.getElementById("festival-lbl").textContent = this.checked ? "🎉 Festival Day" : "Normal Day";
+});
+
+// ═══════════════════════════════════════════════════
+// PREDICTION
+// ═══════════════════════════════════════════════════
+let miniChart = null;
+
+async function runPredict(){
+  const btn = document.getElementById("predict-btn");
+  btn.textContent = "⏳ Analyzing...";
+  btn.disabled = true;
+
+  const payload = {
+    day:      document.getElementById("inp-day").value,
+    weather:  document.getElementById("inp-weather").value,
+    festival: document.getElementById("inp-festival").checked ? 1 : 0,
+    expected: document.getElementById("inp-exp").value,
+    prev_day: document.getElementById("inp-prev").value,
+    prev_week:document.getElementById("inp-week").value,
+  };
+
+  try {
+    const res  = await fetch("/predict", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    showResult(data);
+  } catch(err){ alert("Error: " + err); }
+
+  btn.textContent = "⚡ Generate Prediction";
+  btn.disabled = false;
+}
+
+function showResult(d){
+  document.getElementById("result-card").style.display   = "block";
+  document.getElementById("impact-section").style.display = "block";
+
+  animNum("r-pred", 0, d.prediction, 700);
+  document.getElementById("r-rec").textContent   = d.recommended + " meals";
+  document.getElementById("r-range").textContent = d.lower + " – " + d.upper + " meals";
+  document.getElementById("r-conf").textContent  = d.efficiency + "%";
+  document.getElementById("r-buf").textContent   = "+" + d.buffer_pct + "%";
+  document.getElementById("r-lo").textContent    = d.lower;
+  document.getElementById("r-mid").textContent   = d.prediction;
+  document.getElementById("r-hi").textContent    = d.upper;
+
+  // Confidence bar
+  var maxV = d.upper * 1.12;
+  var lPct = (d.lower      / maxV * 100).toFixed(1);
+  var uPct = (d.upper      / maxV * 100).toFixed(1);
+  var mPct = (d.prediction / maxV * 100).toFixed(1);
+  document.getElementById("conf-fill").style.left  = lPct + "%";
+  document.getElementById("conf-fill").style.width = (uPct - lPct) + "%";
+  document.getElementById("conf-pin").style.left   = mPct + "%";
+
+  // Impact
+  document.getElementById("i-cost").textContent = "$" + d.cost_saved.toLocaleString();
+  document.getElementById("i-co2").textContent  = d.co2_saved + " kg";
+
+  // Drivers
+  var driv = document.getElementById("drivers");
+  driv.innerHTML = "";
+  var maxScore = d.top_features[0][1] || 1;
+  d.top_features.forEach(function(item){
+    var feat  = item[0].replace(/_/g," ");
+    var score = item[1];
+    var pct   = Math.round(score / maxScore * 100);
+    driv.innerHTML +=
+      '<div class="driver-row">' +
+        '<div class="driver-name">' + feat + '</div>' +
+        '<div class="driver-track"><div class="driver-fill" style="width:' + pct + '%"></div></div>' +
+        '<div class="driver-val">' + score + '</div>' +
+      '</div>';
+  });
+
+  // Mini bar chart
+  var ctx = document.getElementById("mini-chart").getContext("2d");
+  if(miniChart) miniChart.destroy();
+  miniChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: ["Lower Bound","Predicted","Recommended","Upper Bound"],
+      datasets: [{
+        data: [d.lower, d.prediction, d.recommended, d.upper],
+        backgroundColor: ["#334155","#00F5A0","#00D9F5","#334155"],
+        borderRadius: 6,
+        borderWidth: 0,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend:{display:false} },
+      scales: {
+        x: { ticks:{color:"#94A3B8"}, grid:{display:false} },
+        y: { ticks:{color:"#94A3B8"}, grid:{color:"#1F2937"} }
+      }
+    }
+  });
+}
+
+function animNum(id, from, to, dur){
+  var el    = document.getElementById(id);
+  var start = performance.now();
+  function step(now){
+    var t   = Math.min((now - start) / dur, 1);
+    el.textContent = Math.round(from + (to - from) * t);
+    if(t < 1) requestAnimationFrame(step);
+    else el.textContent = to;
+  }
+  requestAnimationFrame(step);
+}
+
+// ═══════════════════════════════════════════════════
+// DASHBOARD
+// ═══════════════════════════════════════════════════
+var dashLoaded = false;
+var compChart  = null;
+var fiChart    = null;
+
+async function loadDashboard(){
+  if(dashLoaded) return;
+  var res  = await fetch("/dashboard_data");
+  var data = await res.json();
+  var all  = data.metrics.all_results;
+  var mods = Object.keys(all);
+
+  // Model comparison
+  var ctx1 = document.getElementById("model-comp-chart").getContext("2d");
+  if(compChart) compChart.destroy();
+  compChart = new Chart(ctx1, {
+    type: "bar",
+    data: {
+      labels: mods,
+      datasets: [
+        { label:"MAE",     data: mods.map(function(m){ return all[m].MAE; }),  backgroundColor:"#00F5A0" },
+        { label:"RMSE",    data: mods.map(function(m){ return all[m].RMSE; }), backgroundColor:"#00D9F5" },
+        { label:"R² x100", data: mods.map(function(m){ return all[m].R2*100; }), backgroundColor:"#7C3AED" },
+      ]
+    },
+    options: {
+      responsive:true,
+      plugins:{ legend:{ labels:{ color:"#CBD5E1" } } },
+      scales: {
+        x:{ ticks:{color:"#94A3B8"}, grid:{color:"#1F2937"} },
+        y:{ ticks:{color:"#94A3B8"}, grid:{color:"#1F2937"} }
+      }
+    }
+  });
+
+  // Feature importance
+  var fi     = data.metrics.feature_importance;
+  var feats  = Object.keys(fi).map(function(f){ return f.replace(/_/g," "); });
+  var fvals  = Object.values(fi);
+  var ctx2   = document.getElementById("feat-imp-chart").getContext("2d");
+  if(fiChart) fiChart.destroy();
+  fiChart = new Chart(ctx2, {
+    type: "bar",
+    data: {
+      labels: feats,
+      datasets: [{ data:fvals, backgroundColor:"#7C3AED", borderRadius:4, borderWidth:0 }]
+    },
+    options: {
+      indexAxis: "y",
+      responsive: true,
+      plugins: { legend:{display:false} },
+      scales: {
+        x:{ ticks:{color:"#94A3B8"}, grid:{color:"#1F2937"} },
+        y:{ ticks:{color:"#94A3B8", font:{size:10}}, grid:{color:"#1F2937"} }
+      }
+    }
+  });
+
+  dashLoaded = true;
+}
+
+// ═══════════════════════════════════════════════════
+// WEEKLY PLANNER
+// ═══════════════════════════════════════════════════
+var DAYS      = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+var WX_OPTS   = ["Sunny","Cloudy","Rainy","Stormy"];
+var weekChart = null;
+
+// Build day weather selectors
+(function(){
+  var row = document.getElementById("week-wx-row");
+  row.innerHTML = DAYS.map(function(d, i){
+    var opts = WX_OPTS.map(function(w){
+      return '<option value="' + w + '">' + w + '</option>';
+    }).join("");
+    return '<div class="wx-day-cell"><div class="wx-day-label">' + d.slice(0,3) + '</div>' +
+           '<select class="wx-day-sel" id="wsel-' + i + '">' + opts + '</select></div>';
+  }).join("");
+})();
+
+async function genWeekly(){
+  var wxList = DAYS.map(function(_, i){
+    return document.getElementById("wsel-" + i).value;
+  });
+  var payload = {
+    base_expected: document.getElementById("wk-exp").value,
+    base_prev:     document.getElementById("wk-pre").value,
+    weather_list:  wxList,
+  };
+  var res  = await fetch("/weekly", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify(payload)
+  });
+  var data = await res.json();
+  showWeekly(data);
+}
+
+function showWeekly(data){
+  document.getElementById("weekly-result").style.display = "block";
+
+  // Summary cards
+  document.getElementById("weekly-summary").innerHTML =
+    '<div class="sum-card c-green">' +
+      '<div class="sum-num">' + data.total_meals.toLocaleString() + '</div>' +
+      '<div class="sum-lbl">Total Meals to Prepare</div>' +
+    '</div>' +
+    '<div class="sum-card c-teal">' +
+      '<div class="sum-num">$' + data.total_cost.toLocaleString() + '</div>' +
+      '<div class="sum-lbl">Estimated Weekly Cost</div>' +
+    '</div>' +
+    '<div class="sum-card c-purple">' +
+      '<div class="sum-num">7</div>' +
+      '<div class="sum-lbl">Days Planned</div>' +
+    '</div>';
+
+  // Chart
+  var ctx = document.getElementById("weekly-chart").getContext("2d");
+  if(weekChart) weekChart.destroy();
+  weekChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: DAYS,
+      datasets: [
+        { label:"Predicted",   data: data.plan.map(function(p){ return p.predicted; }),
+          borderColor:"#00F5A0", backgroundColor:"rgba(0,245,160,0.08)", tension:0.4, fill:true, pointRadius:5 },
+        { label:"Recommended", data: data.plan.map(function(p){ return p.recommended; }),
+          borderColor:"#00D9F5", backgroundColor:"rgba(0,217,245,0.05)", borderDash:[5,5],
+          tension:0.4, fill:false, pointRadius:4 },
+        { label:"Lower",       data: data.plan.map(function(p){ return p.lower; }),
+          borderColor:"#475569", borderWidth:1, fill:false, pointRadius:2 },
+        { label:"Upper",       data: data.plan.map(function(p){ return p.upper; }),
+          borderColor:"#475569", borderWidth:1, fill:"-2",
+          backgroundColor:"rgba(71,85,105,0.07)", pointRadius:2 },
+      ]
+    },
+    options: {
+      responsive:true,
+      plugins:{
+        legend:{ labels:{ color:"#CBD5E1" } },
+        tooltip:{ mode:"index", intersect:false }
+      },
+      scales: {
+        x:{ ticks:{color:"#94A3B8"}, grid:{color:"#1F2937"} },
+        y:{ ticks:{color:"#94A3B8"}, grid:{color:"#1F2937"},
+            title:{display:true, text:"Meals", color:"#94A3B8"} }
+      }
+    }
+  });
+
+  // Table
+  // Helper map for weather icons — defined inline as a JS object (no Jinja2 conflict)
+  var wxMap = { Sunny:"☀️", Cloudy:"☁️", Rainy:"🌧️", Stormy:"⛈️" };
+  var rows = data.plan.map(function(p){
+    var icon = wxMap[p.weather] || "🌤️";
+    return '<tr>' +
+      '<td><b>' + p.day + '</b></td>' +
+      '<td>' + icon + ' ' + p.weather + '</td>' +
+      '<td>' + (p.festival ? "🎉 Yes" : "—") + '</td>' +
+      '<td>' + p.expected + '</td>' +
+      '<td><span class="badge-pred">' + p.predicted + '</span></td>' +
+      '<td class="range-td">' + p.lower + ' – ' + p.upper + '</td>' +
+      '<td><span class="badge-rec">' + p.recommended + '</span></td>' +
+      '<td>$' + p.cost + '</td>' +
+    '</tr>';
+  }).join("");
+
+  document.getElementById("week-tbl").innerHTML =
+    '<thead><tr>' +
+      '<th>Day</th><th>Weather</th><th>Festival</th>' +
+      '<th>Expected</th><th>Predicted</th><th>Range</th>' +
+      '<th>Recommended</th><th>Cost Est.</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody>';
+}
+</script>
+</body>
+</html>
